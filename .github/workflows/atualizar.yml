@@ -2,10 +2,8 @@ name: Atualizar Portal Michel Goldemberg
 
 on:
   schedule:
-    # 13:00 UTC = 10:00 em Brasília (UTC-3).
-    # O cron do GitHub roda em UTC e pode atrasar alguns minutos em horário de pico.
     - cron: "0 13 * * *"
-  workflow_dispatch:   # permite rodar manualmente pelo botão "Run workflow"
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -16,7 +14,7 @@ jobs:
   gerar:
     runs-on: ubuntu-latest
     steps:
-      - name: Baixar o repositório
+      - name: Baixar o repositorio
         uses: actions/checkout@v4
 
       - name: Instalar Python
@@ -24,7 +22,7 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Instalar dependências
+      - name: Instalar dependencias
         run: pip install anthropic
 
       - name: Gerar o portal do dia
@@ -32,12 +30,13 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: python gerar_portal.py
 
-      - name: Publicar index.html no repositório
+      - name: Publicar index.html no repositorio
         run: |
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
           git add index.html
-          git commit -m "Portal atualizado: $(date -u +'%Y-%m-%d')" || echo "Sem mudanças"
+          git commit -m "Portal atualizado: $(date -u +'%Y-%m-%d')" || echo "Sem mudancas"
+          git pull --rebase --autostash
           git push
 
   deploy:
@@ -47,7 +46,7 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - name: Baixar o repositório (com index.html novo)
+      - name: Baixar o repositorio
         uses: actions/checkout@v4
 
       - name: Configurar Pages
