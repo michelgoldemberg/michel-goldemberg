@@ -43,7 +43,13 @@ Categorias (use exatamente estas chaves):
 
 Para cada item retorne: titulo, resumo (2-3 frases, direto ao ponto, sem enrolação), fonte (nome do veículo), url (link real da notícia), e importa (uma frase de "por que isso importa pra mim" — só quando fizer sentido, senão deixe vazio).
 
-Responda EXCLUSIVAMENTE com um objeto JSON válido, sem markdown, sem crases, sem nenhum texto antes ou depois. Estrutura:
+IMPORTANTE sobre o formato da resposta:
+1. Primeiro faça as buscas na web que precisar.
+2. Depois, na sua mensagem final de texto, escreva APENAS o objeto JSON — nada de explicação antes ou depois, nada de "aqui estão as notícias", sem crases de markdown.
+3. O JSON deve começar com {{ e terminar com }}.
+4. Quase nunca uma categoria fica totalmente vazia num dia normal de notícias — busque bem antes de retornar lista vazia.
+
+Estrutura exata:
 {{"politica": [{{"titulo": "...", "resumo": "...", "fonte": "...", "url": "...", "importa": "..."}}], "mercado": [...], "ia": [...], "empreendedorismo": [...], "judaica": [...]}}"""
 
 # ----------------------------------------------------------------------------
@@ -53,22 +59,54 @@ def buscar_noticias():
     client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
     resp = client.messages.create(
         model="claude-sonnet-4-6",
-        max_tokens=8000,
+        max_tokens=16000,
         messages=[{"role": "user", "content": PROMPT}],
         tools=[{"type": "web_search_20250305", "name": "web_search", "max_uses": 12}],
     )
-    texto = "".join(
-        bloco.text for bloco in resp.content if getattr(bloco, "type", "") == "text"
-    ).strip()
-    if texto.startswith("```"):
-        texto = texto.split("```")[1]
-        if texto.startswith("json"):
-            texto = texto[4:]
-    texto = texto.strip()
-    ini, fim = texto.find("{"), texto.rfind("}")
-    if ini != -1 and fim != -1:
-        texto = texto[ini:fim + 1]
-    return json.loads(texto)
+    # Junta TODOS os blocos de texto (o web search intercala texto e resultados)
+    partes = [b.text for b in resp.content if getattr(b, "type", "") == "text"]
+    texto = "\n".join(partes).strip()
+
+    print(f"[diag] blocos de texto: {len(partes)} | tamanho total: {len(texto)} chars")
+    print(f"[diag] inicio da resposta: {texto[:200]!r}")
+
+    # Procura o maior trecho entre chaves que seja um JSON válido.
+    # (o modelo às vezes escreve texto antes/depois do JSON)
+    candidato = _extrair_json(texto)
+    if candidato is None:
+        raise ValueError("Nenhum JSON encontrado na resposta do modelo.")
+    return candidato
+
+
+def _extrair_json(texto):
+    """Tenta extrair e parsear um objeto JSON de um texto que pode ter ruído ao redor."""
+    # 1) remove cercas de markdown se houver
+    t = texto
+    if "```" in t:
+        # pega o conteúdo dentro do primeiro bloco ```
+        partes = t.split("```")
+        for p in partes:
+            p2 = p[4:] if p.startswith("json") else p
+            j = _tentar_parse_intervalo(p2)
+            if j is not None:
+                return j
+    # 2) tenta o texto inteiro recortando do primeiro { ao último }
+    j = _tentar_parse_intervalo(t)
+    if j is not None:
+        return j
+    return None
+
+
+def _tentar_parse_intervalo(t):
+    ini = t.find("{")
+    fim = t.rfind("}")
+    if ini == -1 or fim == -1 or fim <= ini:
+        return None
+    trecho = t[ini:fim + 1]
+    try:
+        return json.loads(trecho)
+    except json.JSONDecodeError:
+        return None
 
 # ----------------------------------------------------------------------------
 # Ícones SVG minimalistas (preto e branco, traço fino) por seção
